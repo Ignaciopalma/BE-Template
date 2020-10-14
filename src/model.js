@@ -1,11 +1,23 @@
 const Sequelize = require('sequelize');
+const { Op } = Sequelize;
 
 const sequelize = new Sequelize({
   dialect: 'sqlite',
   storage: './database.sqlite3'
 });
 
-class Profile extends Sequelize.Model {}
+class Profile extends Sequelize.Model {
+  async downBalance (amount) {
+    this.balance -= amount;
+    return this.save();
+  }
+
+  async upBalance (amount) {
+    this.balance += amount;
+    return this.save();
+  }
+}
+
 Profile.init(
   {
     firstName: {
@@ -33,7 +45,56 @@ Profile.init(
   }
 );
 
-class Contract extends Sequelize.Model {}
+class Contract extends Sequelize.Model {
+  static async getProfileContract (contractId, profileId, profileType) {
+    const profileCondition = () => {
+      if (profileType === 'client') {
+        return {
+          ClientId: profileId
+        }
+      } else if (profileType === 'contractor') {
+        return  {
+          ContractorId: profileId
+        }
+      }
+    }
+
+    let condition = {
+      where: {
+        [Op.and]: {
+          id: contractId,
+          ...profileCondition()
+        }
+      }
+    }
+
+
+    return await this.findOne(condition)
+  }
+
+  static async getActiveProfileContracts (profileId) {
+    const whereClause = {
+      where: {
+        [Op.and]: [
+          {
+            status: {
+              [Op.not]: 'terminated'
+            }
+          },
+          {
+            [Op.or]: [
+              { ClientId: profileId },
+              { ContractorId: profileId },
+            ]
+          }
+        ]
+      }
+    }
+
+    return await this.findAll(whereClause);
+  }
+}
+
 Contract.init(
   {
     terms: {
@@ -50,7 +111,37 @@ Contract.init(
   }
 );
 
-class Job extends Sequelize.Model {}
+class Job extends Sequelize.Model {
+  static async getUnpaidJobs (contractIds) {
+    const whereClause = {
+      where: {
+        [Op.and]: {
+          ContractId: {
+            [Op.or]: contractIds
+          }
+        },
+        paid: {
+          [Op.or]: [
+            {
+              [Op.is]: null
+            },
+            {
+              [Op.is]: false
+            }
+          ]
+        }
+      }
+    }
+
+    return await Job.findAll(whereClause);
+  }
+
+  async pay () {
+    this.paid = true;
+    return this.save();
+  }
+}
+
 Job.init(
   {
     description: {
